@@ -7,6 +7,7 @@ class ApiController extends Controller
     {
         parent::__construct();
         $this->call->library('api');
+        $this->call->model('CenterApplicationModel');
     }
 
     public function login()
@@ -19,12 +20,14 @@ class ApiController extends Controller
         $stmt = $this->db->raw('SELECT * FROM users WHERE username = ?', [$username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($user && password_verify($password, $user['password'])) {
+        if ($user && (int) ($user['is_active'] ?? 1) === 1 && password_verify($password, $user['password'])) {
             $tokens = $this->api->issue_tokens([
                 'id'   => $user['id'],
                 'role' => $user['role'],
             ]);
             $this->api->respond($tokens);
+        } elseif ($user && password_verify($password, $user['password'])) {
+            $this->api->respond_error('Account is inactive or awaiting center approval', 403);
         } else {
             $this->api->respond_error('Invalid credentials', 401);
         }
@@ -36,15 +39,34 @@ class ApiController extends Controller
         $input = $this->api->body();
 
         $username = trim($input['username'] ?? '');
-        $email = trim($input['email'] ?? '');
+        $email = strtolower(trim($input['email'] ?? ''));
         $password = $input['password'] ?? '';
+        $fullName = trim($input['full_name'] ?? '');
+        $role = $input['role'] ?? 'student';
+        $trainingCenterId = (int) ($input['training_center_id'] ?? 0);
 
-        if ($username === '' || $email === '' || $password === '') {
-            $this->api->respond_error('Username, email, and password are required', 422);
+        if ($username === '' || $email === '' || $password === '' || $fullName === '' || $trainingCenterId < 1) {
+            $this->api->respond_error('Name, username, email, password, and training center are required', 422);
         }
 
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        if (!preg_match('/^[A-Za-z0-9_.-]{3,100}$/', $username) || strlen($fullName) > 150) {
+            $this->api->respond_error('Enter a valid username and full name', 422);
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 255) {
             $this->api->respond_error('A valid email is required', 422);
+        }
+        if (strlen($password) < 8) {
+            $this->api->respond_error('Password must contain at least 8 characters', 422);
+        }
+        if (!in_array($role, ['student', 'instructor'], true)) {
+            $this->api->respond_error('Role must be student or instructor', 422);
+        }
+        $center = $this->db->raw(
+            'SELECT id FROM training_centers WHERE id = ? AND is_active = 1 LIMIT 1',
+            [$trainingCenterId]
+        )->fetch(PDO::FETCH_ASSOC);
+        if (!$center) {
+            $this->api->respond_error('Choose an active training center', 422);
         }
 
         $existing = $this->db->raw(
@@ -56,12 +78,16 @@ class ApiController extends Controller
             $this->api->respond_error('Username or email already exists', 409);
         }
 
-        $this->db->raw(
-            'INSERT INTO users (username, email, password, role, created_at) VALUES (?, ?, ?, ?, NOW())',
-            [$username, $email, password_hash($password, PASSWORD_BCRYPT), 'user']
+        $this->CenterApplicationModel->submit(
+            $username,
+            $email,
+            $password,
+            $role,
+            $fullName,
+            $trainingCenterId
         );
 
-        $this->api->respond(['message' => 'User registered, finally works hays'], 201);
+        $this->api->respond(['message' => 'Application submitted for center approval'], 201);
     }
 
     public function logout()
@@ -76,6 +102,7 @@ class ApiController extends Controller
     public function list()
     {
         $this->api->require_jwt();
+        $this->require_admin();
         $this->api->rate_limit();
 
         $users = $this->db->table('users')
@@ -94,6 +121,10 @@ class ApiController extends Controller
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $this->api->respond_error('A valid email is required', 422);
         }
+        $role = $input['role'] ?? 'student';
+        if (!in_array($role, ['admin', 'instructor', 'student'], true)) {
+            $this->api->respond_error('A valid account role is required', 422);
+        }
 
         $this->db->raw(
             "INSERT INTO users (username, email, password, role, created_at)
@@ -102,7 +133,7 @@ class ApiController extends Controller
                 $input['username'],
                 $email,
                 password_hash($input['password'], PASSWORD_BCRYPT),
-                $input['role'] ?? 'user',
+                $role,
             ]
         );
 
@@ -118,6 +149,9 @@ class ApiController extends Controller
         $email = trim($input['email'] ?? '');
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $this->api->respond_error('A valid email is required', 422);
+        }
+        if (!in_array($input['role'] ?? '', ['admin', 'instructor', 'student'], true)) {
+            $this->api->respond_error('A valid account role is required', 422);
         }
 
         $this->db->raw(

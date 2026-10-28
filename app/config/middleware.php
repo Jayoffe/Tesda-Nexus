@@ -42,7 +42,13 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 |
 */
 require_once APP_DIR . 'middlewares/AuthMiddleware.php';
+require_once APP_DIR . 'middlewares/RoleMiddleware.php';
 
 $config['middlewares'] = [
-	'AuthMiddleware' => new AuthMiddleware()
+	'AuthMiddleware' => new AuthMiddleware(),
+	'AdminMiddleware' => new RoleMiddleware('admin'),
+	'StaffAdminMiddleware' => new RoleMiddleware(['admin', 'center_admin']),
+	'CenterAdminMiddleware' => new RoleMiddleware('center_admin'),
+	'InstructorMiddleware' => new RoleMiddleware('instructor'),
+	'StudentRoleMiddleware' => new RoleMiddleware('student')
 ];

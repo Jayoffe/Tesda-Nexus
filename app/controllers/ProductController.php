@@ -20,7 +20,7 @@ class ProductController extends Controller
         $data['name'] = "LavaLust Framework";
         $data['user_role'] = $this->session->userdata('user_role');
         $data['notification'] = $this->session->flashdata('notification');
-        $this->call->view('product/ProductView', $data);
+        $this->call->view('products/index', $data);
     }
 
     public function create()
@@ -36,13 +36,13 @@ class ProductController extends Controller
                 $quantity = $this->io->post('quantity');
                 $this->ProductModel->create($product_name, $description, $price, $quantity);
                 $this->session->set_flashdata('notification', 'Product added successfully.');
-                header('Location: ' . site_url('/product/display'));
+                header('Location: ' . site_url('/products'));
                 exit;
             }
         }
 
         $data['errors'] = $this->form_validation->get_errors();
-        $this->call->view('product/create', $data);
+        $this->call->view('products/create', $data);
     }
 
     public function edit($id)
@@ -68,14 +68,14 @@ class ProductController extends Controller
                 );
 
                 $this->session->set_flashdata('notification', 'Product updated successfully.');
-                header('Location: ' . site_url('/product/display'));
+                header('Location: ' . site_url('/products'));
                 exit;
             }
         }
 
         $data['product'] = $product;
         $data['errors'] = $this->form_validation->get_errors();
-        $this->call->view('product/edit', $data);
+        $this->call->view('products/edit', $data);
     }
 
     public function delete($id)
@@ -83,7 +83,7 @@ class ProductController extends Controller
         $this->require_admin();
         $this->ProductModel->delete((int) $id);
         $this->session->set_flashdata('notification', 'Product deleted successfully.');
-        header('Location: ' . site_url('/product/display'));
+        header('Location: ' . site_url('/products'));
         exit;
     }
 
